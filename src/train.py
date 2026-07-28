@@ -70,6 +70,7 @@ def train_one_epoch(
     epoch: int = 0,
     total_epochs: int = 1,
 ):
+    print("[DEBUG] Entered train_one_epoch")
     model.train()
     total_loss = 0.0
     total_items = 0
@@ -77,6 +78,7 @@ def train_one_epoch(
     use_amp = bool(config["training"]["amp"]) and device.type == "cuda"
     grad_clip = float(config["training"]["gradient_clip_norm"])
 
+    print("[DEBUG] Building tqdm progress bar for loader...")
     progress = tqdm(
         loader,
         desc=f"Epoch {epoch + 1}/{total_epochs} [train]",
@@ -84,22 +86,31 @@ def train_one_epoch(
         leave=False,
         dynamic_ncols=True,
     )
-    for batch in progress:
+    print("[DEBUG] Starting batch loop...")
+    for batch_idx, batch in enumerate(progress):
+        print("[DEBUG] First batch loaded from loader")
         images = batch["image"].to(device, non_blocking=True)
         labels = batch["label"].to(device, non_blocking=True)
+        if batch_idx == 0:
+            print(f"[DEBUG] images.device = {images.device}")
+            print(f"[DEBUG] labels.device = {labels.device}")
         images, y_a, y_b, lam = mixup_batch(images, labels, mixup_alpha)
+        print("[DEBUG] Running first forward pass...")
 
         optimizer.zero_grad(set_to_none=True)
         with torch.cuda.amp.autocast(enabled=use_amp):
             logits = model(images)
             loss = criterion(logits, y_a, y_b, lam)
+        print(f"[DEBUG] Forward pass done. loss = {loss.item():.6f}")
         scaler.scale(loss).backward()
+        print("[DEBUG] Backward pass done")
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         scaler.step(optimizer)
         scaler.update()
         if ema:
             ema.update(model)
+        print("[DEBUG] Optimizer step done")
 
         batch_size = images.size(0)
         batch_loss = float(loss.detach().cpu())
@@ -114,6 +125,7 @@ def train_one_epoch(
 
     progress.close()
     scheduler.step()
+    print("[DEBUG] Exiting train_one_epoch")
     return total_loss / max(1, total_items)
 
 
@@ -156,8 +168,10 @@ def validate_loss(
 def train_hybrid(config, train_dataset, val_dataset, test_dataset, exp_dir: str | Path, logger):
     exp_dir = Path(exp_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[DEBUG] Device detected: {device}")
     class_names = [k for k, _ in sorted(config["classes"].items(), key=lambda item: item[1])]
 
+    print("[DEBUG] Creating DataLoaders...")
     train_loader = DataLoader(
         train_dataset,
         batch_size=int(config["training"]["batch_size"]),
@@ -179,25 +193,37 @@ def train_hybrid(config, train_dataset, val_dataset, test_dataset, exp_dir: str 
         num_workers=int(config["dataset"]["num_workers"]),
         pin_memory=bool(config["dataset"]["pin_memory"]),
     )
+    print("[DEBUG] DataLoaders ready.")
 
+    print("[DEBUG] Building model...")
     model = build_model(config).to(device)
+    print("[DEBUG] Model built.")
+    print(f"[DEBUG] Device: {device}")
+    print(f"[DEBUG] Model device: {next(model.parameters()).device}")
     optimizer = AdamW(model.parameters(), lr=float(config["training"]["learning_rate"]), weight_decay=float(config["training"]["weight_decay"]))
     scheduler = build_scheduler(optimizer, config)
     scaler = torch.cuda.amp.GradScaler(enabled=bool(config["training"]["amp"]) and device.type == "cuda")
     criterion = MixupCriterion(float(config["training"]["label_smoothing"]))
+    print("[DEBUG] Creating EMA...")
     ema = ModelEMA(model, float(config["training"]["ema_decay"]))
+    print("[DEBUG] EMA created.")
 
     start_epoch = 0
     best_metric = float("inf")
     latest = exp_dir / "latest.pt"
     if bool(config["training"].get("resume", True)) and latest.exists():
+        print("[DEBUG] latest.pt exists, loading checkpoint...")
         ckpt = load_checkpoint(latest, model, optimizer, scheduler, scaler, ema, device)
         start_epoch = int(ckpt["epoch"]) + 1
         best_metric = float(ckpt["best_metric"])
         logger.info("Resumed from epoch %s", start_epoch)
         tqdm.write(f"Resumed from epoch {start_epoch} (best_metric={best_metric:.6f})")
+    else:
+        print("[DEBUG] No latest.pt found, starting fresh training.")
 
     total_epochs = int(config["training"]["epochs"])
+    print(f"[DEBUG] start_epoch={start_epoch}")
+    print(f"[DEBUG] total_epochs={total_epochs}")
     patience = int(config["training"]["early_stopping_patience"])
     stale_epochs = 0
     start_time = time.time()
@@ -206,6 +232,7 @@ def train_hybrid(config, train_dataset, val_dataset, test_dataset, exp_dir: str 
     tqdm.write(f"Starting training on device={device} | epochs={total_epochs} | patience={patience}")
 
     if start_epoch >= total_epochs:
+        print("[DEBUG] start_epoch >= total_epochs, skipping training loop!")
         tqdm.write(
             f"\u26a0 Nothing to train: resumed checkpoint is at epoch {start_epoch - 1}, "
             f"which already meets the configured {total_epochs} epochs. "
@@ -219,6 +246,7 @@ def train_hybrid(config, train_dataset, val_dataset, test_dataset, exp_dir: str 
             start_epoch, total_epochs,
         )
 
+    print("[DEBUG] Starting epoch loop...")
     for epoch in range(start_epoch, total_epochs):
         epoch_start = time.time()
         tqdm.write("")
@@ -226,10 +254,12 @@ def train_hybrid(config, train_dataset, val_dataset, test_dataset, exp_dir: str 
         tqdm.write(f"Epoch {epoch + 1}/{total_epochs}")
         tqdm.write("=" * 60)
 
+        print("[DEBUG] Entering train_one_epoch...")
         train_loss = train_one_epoch(
             model, train_loader, optimizer, scheduler, scaler, criterion, ema, device, config,
             epoch=epoch, total_epochs=total_epochs,
         )
+        print(f"[DEBUG] train_one_epoch returned. train_loss={train_loss:.6f}")
         eval_model = ema.ema if ema else model
         val_loss = validate_loss(
             eval_model, val_loader, criterion, device, config,
