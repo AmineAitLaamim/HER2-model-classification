@@ -11,13 +11,15 @@ The implementation prioritizes methodological fidelity over optimization. It int
 The workflow is designed for Google Colab with a T4 GPU.
 
 1. Mount Google Drive.
-2. Install dependencies.
-3. Prepare dataset manifests.
-4. Run smoke tests.
-5. Train the end-to-end hybrid ensemble.
-6. Resume automatically from `latest.pt` if interrupted.
-7. Evaluate the best checkpoint.
-8. Save metrics, figures, predictions, checkpoints, logs, and configs to an experiment directory in Google Drive.
+2. Clone or pull the GitHub repository: `https://github.com/AmineAitLaamim/HER2-model-classification`.
+3. Change into the cloned repository before installing dependencies.
+4. Install dependencies from `requirements.txt`.
+5. Prepare dataset manifests.
+6. Run smoke tests.
+7. Train the end-to-end hybrid ensemble.
+8. Resume automatically from `latest.pt` if interrupted.
+9. Evaluate the best checkpoint.
+10. Save metrics, figures, predictions, checkpoints, logs, and configs to an experiment directory in Google Drive.
 
 ## Project Structure
 

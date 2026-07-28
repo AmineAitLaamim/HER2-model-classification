@@ -16,6 +16,42 @@ The implementation is designed for Google Colab and stores experiment outputs in
 pip install -r requirements.txt
 ```
 
+## Colab Setup From GitHub
+
+In Colab, first mount Drive, then clone or update this repository:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+
+REPO_URL = "https://github.com/AmineAitLaamim/HER2-model-classification.git"
+REPO_DIR = "/content/HER2-model-classification"
+
+import os
+
+if os.path.exists(REPO_DIR):
+    %cd {REPO_DIR}
+    !git pull
+else:
+    !git clone {REPO_URL} {REPO_DIR}
+    %cd {REPO_DIR}
+
+!pip install -r requirements.txt
+```
+
+Use Google Drive for persistent data and results:
+
+```python
+DATA_DIR = "/content/drive/MyDrive/HER2_Classification/datasets/HER2-IHC-40x"
+OUTPUT_DIR = "/content/drive/MyDrive/HER2_Classification/experiments"
+CONFIG = "configs/hybrid.yaml"
+
+!mkdir -p /content/drive/MyDrive/HER2_Classification/datasets
+!mkdir -p /content/drive/MyDrive/HER2_Classification/experiments
+!mkdir -p /content/drive/MyDrive/HER2_Classification/figures
+!mkdir -p /content/drive/MyDrive/HER2_Classification/notebooks
+```
+
 ## Dataset
 
 The code supports a directory dataset:
@@ -103,4 +139,3 @@ pr.png
 - early stopping patience: `25`
 
 Known paper ambiguities are documented in `IMPLEMENTATION_PLAN.md`.
-
