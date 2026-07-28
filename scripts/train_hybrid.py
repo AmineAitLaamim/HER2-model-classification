@@ -1,10 +1,29 @@
 from __future__ import annotations
 
-import argparse
+import sys
 from pathlib import Path
 
+# ---------------------------------------------------------------------
+# Allow this script to be executed directly:
+#     python scripts/train_hybrid.py
+# ---------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import argparse
+
 from src.config import load_config, save_config
-from src.dataset import HER2PatchDataset, read_manifest, samples_for_split, scan_directory_dataset, split_train_val, validate_samples, verify_official_counts
+from src.dataset import (
+    HER2PatchDataset,
+    read_manifest,
+    samples_for_split,
+    scan_directory_dataset,
+    split_train_val,
+    validate_samples,
+    verify_official_counts,
+)
 from src.logging_utils import setup_logger
 from src.reproducibility import environment_metadata, seed_everything
 from src.smoke_tests import run_smoke_tests
