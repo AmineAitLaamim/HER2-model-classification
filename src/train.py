@@ -205,6 +205,20 @@ def train_hybrid(config, train_dataset, val_dataset, test_dataset, exp_dir: str 
     logger.info("Starting training on device=%s", device)
     tqdm.write(f"Starting training on device={device} | epochs={total_epochs} | patience={patience}")
 
+    if start_epoch >= total_epochs:
+        tqdm.write(
+            f"\u26a0 Nothing to train: resumed checkpoint is at epoch {start_epoch - 1}, "
+            f"which already meets the configured {total_epochs} epochs. "
+            f"Skipping straight to final evaluation on best.pt. "
+            f"Increase 'training.epochs' in the config, or delete/rename latest.pt "
+            f"to force a fresh run, if you intended to keep training."
+        )
+        logger.warning(
+            "Resume epoch %s >= configured epochs %s; skipping training loop entirely, "
+            "going straight to final evaluation.",
+            start_epoch, total_epochs,
+        )
+
     for epoch in range(start_epoch, total_epochs):
         epoch_start = time.time()
         tqdm.write("")
