@@ -28,19 +28,37 @@ def _iter_images(root: Path, extensions: set[str]) -> Iterable[Path]:
 
 def scan_directory_dataset(data_dir: str | Path, config: dict[str, Any]) -> list[Sample]:
     root = Path(data_dir)
-    classes = set(config["classes"].keys())
+    dataset_config = config["dataset"]
+    class_to_idx = dataset_config.get("class_mapping") or config["classes"]
+    classes = list(class_to_idx.keys())
     extensions = set(config["dataset"]["allowed_extensions"])
     samples: list[Sample] = []
-    for split in ("train", "val", "test"):
-        split_dir = root / split
+    split_dirs = {
+        "train": dataset_config.get("train_dir", "train"),
+        "val": dataset_config.get("val_dir", "val"),
+        "test": dataset_config.get("test_dir", "test"),
+    }
+    required_splits = ("train", "test")
+    for split in required_splits:
+        split_dir = root / split_dirs[split]
         if not split_dir.exists():
-            continue
+            raise FileNotFoundError(f"Required {split} folder not found: {split_dir}")
         for label in classes:
             class_dir = split_dir / label
             if not class_dir.exists():
-                continue
+                raise FileNotFoundError(f"Required class folder not found: {class_dir}")
             for image_path in _iter_images(class_dir, extensions):
                 samples.append(Sample(str(image_path), label, split))
+    val_dir_name = split_dirs.get("val")
+    if val_dir_name:
+        val_dir = root / val_dir_name
+        if val_dir.exists():
+            for label in classes:
+                class_dir = val_dir / label
+                if not class_dir.exists():
+                    raise FileNotFoundError(f"Required validation class folder not found: {class_dir}")
+                for image_path in _iter_images(class_dir, extensions):
+                    samples.append(Sample(str(image_path), label, "val"))
     if not samples:
         raise FileNotFoundError(f"No dataset samples found under {root}")
     return samples
@@ -95,7 +113,7 @@ def split_train_val(samples: list[Sample], val_fraction: float, seed: int) -> li
 
 
 def validate_samples(samples: list[Sample], config: dict[str, Any]) -> dict[str, Any]:
-    class_to_idx = config["classes"]
+    class_to_idx = config["dataset"].get("class_mapping") or config["classes"]
     allowed = set(class_to_idx.keys())
     invalid = sorted({s.label for s in samples if s.label not in allowed})
     if invalid:
@@ -143,7 +161,38 @@ def validate_samples(samples: list[Sample], config: dict[str, Any]) -> dict[str,
     for sample in samples:
         counts.setdefault(sample.split, {}).setdefault(sample.label, 0)
         counts[sample.split][sample.label] += 1
-    return {"num_samples": len(samples), "class_counts": counts}
+    effective_counts = {
+        split: {label: counts.get(split, {}).get(label, 0) for label in class_to_idx}
+        for split in ("train", "val", "test")
+        if split in counts
+    }
+    return {"num_samples": len(samples), "class_counts": effective_counts}
+
+
+def verify_official_counts(samples: list[Sample], config: dict[str, Any]) -> dict[str, Any]:
+    expected = config["dataset"].get("expected_counts") or {}
+    if not expected:
+        return {"verified": False, "reason": "No expected_counts configured."}
+
+    class_to_idx = config["dataset"].get("class_mapping") or config["classes"]
+    actual: dict[str, dict[str, int]] = {}
+    for split in ("train", "test"):
+        actual[split] = {label: 0 for label in class_to_idx}
+    for sample in samples:
+        if sample.split in actual:
+            actual[sample.split][sample.label] += 1
+
+    mismatches = []
+    for split, expected_by_class in expected.items():
+        for label, expected_count in expected_by_class.items():
+            actual_count = actual.get(split, {}).get(label, 0)
+            if actual_count != int(expected_count):
+                mismatches.append(
+                    f"{split}/{label}: expected {expected_count}, found {actual_count}"
+                )
+    if mismatches:
+        raise ValueError("Official HER2-IHC-40x count verification failed: " + "; ".join(mismatches))
+    return {"verified": True, "expected_counts": expected, "actual_counts": actual}
 
 
 def file_digest(path: str | Path, block_size: int = 1 << 20) -> str:
